@@ -1,22 +1,16 @@
-
 pipeline {
     agent any
-
     environment {
-        HARBOR_URL  = '10.25.118.93'
+        HARBOR_URL     = '<JENKINS_HARBOR_IP>'
         HARBOR_PROJECT = 'hello-jenkins'
-        IMAGE_NAME  = 'hello-jenkins'
-        IMAGE_TAG   = "${BUILD_NUMBER}"
-        FULL_IMAGE  = "${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${BUILD_NUMBER}"
+        IMAGE_NAME     = 'hello-jenkins'
+        IMAGE_TAG      = "${BUILD_NUMBER}"
+        FULL_IMAGE     = "${HARBOR_URL}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
     }
-
     stages {
         stage('Checkout') {
-            steps {
-                checkout scm
-            }
+            steps { checkout scm }
         }
-
         stage('Install Dependencies') {
             steps {
                 sh '''
@@ -26,7 +20,6 @@ pipeline {
                 '''
             }
         }
-
         stage('Run Tests') {
             steps {
                 sh '''
@@ -35,56 +28,40 @@ pipeline {
                 '''
             }
         }
-
         stage('Build Docker Image') {
             steps {
-                sh '''
-                    docker build -t ${FULL_IMAGE} .
-                '''
+                sh 'docker build -t ${FULL_IMAGE} .'
             }
         }
-
         stage('Push to Harbor') {
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'harbor-credentials',
-                        usernameVariable: 'HARBOR_USER',
-                        passwordVariable: 'HARBOR_PASSWORD'
-                    )
-                ]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'harbor-credentials',
+                    usernameVariable: 'HARBOR_USER',
+                    passwordVariable: 'HARBOR_PASSWORD'
+                )]) {
                     sh '''
-                        echo "$HARBOR_PASSWORD" | docker login ${HARBOR_URL} \
-                            -u "$HARBOR_USER" --password-stdin
-
+                        echo "$HARBOR_PASSWORD" | docker login ${HARBOR_URL} -u "$HARBOR_USER" --password-stdin
                         docker push ${FULL_IMAGE}
                         docker logout ${HARBOR_URL}
                     '''
                 }
             }
         }
-
         stage('Deploy to Kubernetes') {
             steps {
-                withCredentials([
-                    file(
-                        credentialsId: 'kubernetes-kubeconfig',
-                        variable: 'KUBECONFIG'
-                    )
-                ]) {
+                withCredentials([file(
+                    credentialsId: 'kubernetes-kubeconfig',
+                    variable: 'KUBECONFIG'
+                )]) {
                     sh '''
-                        kubectl set image deployment/hello-jenkins \
-                            hello-jenkins=${FULL_IMAGE} \
-                            -n demo
-
-                        kubectl rollout status deployment/hello-jenkins \
-                            -n demo --timeout=180s
+                        kubectl set image deployment/hello-jenkins hello-jenkins=${FULL_IMAGE} -n demo
+                        kubectl rollout status deployment/hello-jenkins -n demo --timeout=180s
                     '''
                 }
             }
         }
     }
-
     post {
         success {
             echo "CI/CD successful! Deployed ${FULL_IMAGE}"
